@@ -1,0 +1,918 @@
+JUKEBOXX v2 — MASTER PLAN
+==========================
+Revised: 2026-03-15
+Status: Active
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VISION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Jukeboxx is a fork of Lidarr. The UI looks and works like Lidarr. The data
+model, download pipeline, indexer system, and queue are modeled directly on
+Lidarr's open-source architecture. The additions are:
+
+  - Track-level monitoring (not just album-level)
+  - Spotify as the primary source of truth for what you want
+  - Soulseek as a first-class download client (alongside torrents and Usenet)
+  - Spotizerr as a direct streaming source
+  - YouTube as fallback
+  - Playlist sync to Jellyfin (separate from download management)
+
+GUIDING PRINCIPLES
+
+1. BUILD ON LIDARR. Don't reinvent. Model downloads, indexers, quality profiles,
+   and history exactly as Lidarr does them. Users who know Lidarr need zero
+   learning curve.
+
+2. VANILLA JS STAYS. No build toolchain. Single-file JS modules per page.
+
+3. TEST AS YOU CODE. Every phase includes specific UI test steps that MUST be
+   executed before marking complete. If a feature isn't tested, it isn't done.
+
+4. PARITY FIRST. A working feature beats a polished stub. Don't add UI for
+   something that has no backend, and don't add backend without wiring the UI.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CURRENT STATE — WHAT IS DONE vs BROKEN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WORKING:
+  [x] Shell, sidebar, router, auth
+  [x] Lidarr design system (colors, fonts, layout)
+  [x] Artists page (grid, add artist, monitored toggle, search)
+  [x] Artist detail page (discography tabs, hero section)
+  [x] Album detail page (tracklist, status badges)
+  [x] Wanted page (missing albums + wanted tracks tabs)
+  [x] Activity page (queue polling, history, YouTube URL input)
+  [x] Calendar page (month grid, release dots, upcoming/recent panels)
+  [x] Import wizard — Liked Songs tab (paginated, checkbox, import)
+  [x] Import wizard — Saved Albums tab (card grid, checkbox, import)
+  [x] Import wizard — Followed Artists tab (card grid, import)
+  [x] Settings — Spotify, Media Management, Quality Profiles CRUD, Download
+      Clients (Spotizerr + MeTube), System
+  [x] Backend: monitored_artists, monitored_albums, monitored_tracks tables
+  [x] Backend: quality_profiles table + API
+  [x] Backend: unified_downloads table (schema exists)
+  [x] Backend: YouTube search + review queue
+  [x] Backend: Release monitoring scheduler (daily)
+  [x] Backend: /calendar/releases endpoint
+
+BROKEN / UNFINISHED:
+  [ ] Import wizard — Playlists tab: janky, non-functional. Needs full rewrite.
+  [ ] Download buttons everywhere are stubs — nothing actually dispatches
+  [ ] Post-download status sync: monitored_tracks.status never flips to 'have'
+  [ ] unified_downloads table is unused — Activity reads old `downloads` table
+  [ ] YouTube auto-fallback is not called anywhere in the download pipeline
+  [ ] Quality profiles: delete button visually misaligned
+  [ ] Calendar: should be disabled by default, toggle in settings
+  [ ] No qBittorrent client
+  [ ] No Soulseek (slskd) client
+  [ ] No SABnzbd client
+  [ ] No indexer system
+  [ ] No Prowlarr integration
+  [ ] No playlist sync menu (Spotify → Jellyfin)
+  [ ] No unmatched files view
+  [ ] No log viewer
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LIDARR DOWNLOAD ARCHITECTURE — REFERENCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Lidarr source: https://github.com/Lidarr/Lidarr
+Key namespaces: NzbDrone.Core.Download, NzbDrone.Core.Indexers
+
+DOWNLOAD CLIENTS (Lidarr model):
+  Each client is a row in download_clients table:
+    id, name, enable, priority, implementation, settings_json
+  Implementations: QBittorrent, Sabnzbd, NzbGet, Deluge, Transmission,
+                   RTorrent, Hadouken, etc.
+  Each client has: host, port, username, password, category, recentPriority,
+                   olderPriority, addPaused, useSsl, urlBase
+  Test connection: ping the client, verify auth, verify category exists
+
+  Jukeboxx adds: Spotizerr, MeTube, slskd (Soulseek), Prowlarr (as client)
+
+INDEXERS (Lidarr model):
+  Each indexer is a row in indexers table:
+    id, name, enable, priority, protocol (torrent/usenet), implementation,
+    settings_json, supportsRss, supportsSearch
+  Implementations: Newznab (Usenet), Torznab (Torrent), Gazelle (music-specific)
+  Prowlarr acts as a proxy — single Prowlarr entry gives access to all its
+  configured indexers via standardized Torznab/Newznab API.
+
+QUEUE (Lidarr model):
+  Lidarr polls each enabled download client at regular intervals.
+  Each item in the client queue is matched to a monitored album via:
+    release title → fuzzy match against album name + artist name
+  Queue items: id, title, status, protocol, size, sizeleft, eta, client_name,
+               downloadId, album_id, artist_id, quality
+  Actions: Remove, Blacklist, Mark as Complete
+
+IMPORT (Lidarr model):
+  On download completion, Lidarr:
+  1. Finds the completed item in the download client
+  2. Copies/hardlinks files to the music root
+  3. Renames files using the naming format template
+  4. Scans the new files for audio metadata
+  5. Matches to monitored album → marks album status = 'have'
+  6. Sends notification
+
+HISTORY (Lidarr model):
+  Every download event is logged: grabbed, downloadFailed, downloadFolderImported
+  Per entry: date, album, artist, quality, indexer, downloadClient, protocol, data
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 1 — IMMEDIATE UI FIXES  [~1 hour, no backend changes]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1.1 Quality Profiles delete button alignment
+    Problem: Delete button in the profiles table is misaligned/janky.
+    Fix: In settings.js renderQuality(), the table cell containing Edit + Del
+         buttons needs consistent .btn-xs styling with no margin weirdness.
+         Both buttons should be in a flexbox cell with gap:4px.
+    File: frontend/js/pages/settings.js, loadQualityProfiles() table render
+    Also add: a 2px left border to the table matching arr style
+
+  TEST:
+    1. Navigate to Settings → Quality Profiles
+    2. Verify all rows have properly aligned Edit and Del buttons at same height
+    3. Click Del on a non-default profile → confirm dialog → profile removed
+    4. Verify "Default" row shows no Del button and Edit is disabled
+    5. Click "+ Add Profile" → fill form → Save → new row appears
+
+1.2 Calendar disabled by default
+    Problem: Calendar appears in sidebar nav even if user has no monitored artists.
+    Fix: Add setting "calendar_enabled" (default: "0"). Hide the Calendar nav
+         item and route when disabled. Add toggle in Settings → System.
+         When disabled and user navigates to #/calendar, redirect to #/artists.
+    Files: frontend/index.html (nav item conditional), frontend/js/app.js
+           (route guard), frontend/js/pages/settings.js (System section toggle)
+    Backend: no change needed, GET /settings already supports arbitrary settings
+
+  TEST:
+    1. Fresh load → Settings → System → verify "Enable Calendar" toggle is OFF
+    2. Navigate to #/calendar → should redirect to #/artists (or show disabled state)
+    3. Calendar nav item should be hidden or greyed out
+    4. Toggle ON in settings → save → Calendar nav item appears
+    5. Navigate to Calendar → month grid renders (even if empty)
+    6. Toggle OFF again → nav item disappears
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 2 — IMPORT PLAYLISTS FIX  [~2 hours]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2.1 What is broken
+    The current Playlists tab in import.js shows a list of playlists but the
+    drill-in to track view doesn't work or renders janky. The track list does
+    not match the Liked Songs pattern (table with checkboxes, status badges).
+    The import action is not wired correctly.
+
+2.2 Backend: verify these endpoints exist and work
+    GET /spotify/playlists             → user's playlist list (already exists)
+    GET /spotify/playlists/{id}/tracks → tracks in a playlist (already exists)
+    POST /import/tracks                → already exists
+
+    Before coding the frontend, manually test each endpoint:
+    curl http://localhost:8000/api/spotify/playlists
+    curl http://localhost:8000/api/spotify/playlists/{id}/tracks?limit=50&offset=0
+    Verify response shape matches what the frontend will expect.
+
+2.3 Frontend rewrite — playlists tab in import.js
+    State machine — two views:
+      VIEW A: Playlist list
+        - Fetches GET /spotify/playlists on tab load
+        - Shows loading skeleton during fetch
+        - Renders a simple list (not cards — lists are easier to scan for playlists):
+            [playlist image 44x44] [name] [track count] [owner] [→ Browse button]
+        - "Back" button navigates back to source tabs
+        - If no playlists: "No playlists found. Create playlists in Spotify."
+        - If Spotify disconnected: "Connect Spotify in Settings"
+
+      VIEW B: Playlist track browser (user clicked a playlist)
+        - Breadcrumb: Import → Playlists → [Playlist Name]
+        - "← Back to Playlists" button (no full page reload — just swap view state)
+        - Fetches GET /spotify/playlists/{id}/tracks?limit=50&offset=0
+        - Shows loading skeleton
+        - Renders IDENTICAL table to Liked Songs tab:
+            checkbox | 44x44 thumb | track name + artist | album | duration | status badge
+        - Status badge: "Local" (green), "Monitored" (accent), blank (not monitored)
+        - Auto-check: items with no status (not local, not monitored)
+        - Filter bar: All / Not Local / Not Monitored
+        - "Select All" / "Deselect All" buttons
+        - Pagination: "Load More" button, shows remaining count
+        - Sticky action bar: "X tracks selected → Import" (same as Liked Songs)
+        - Import: POST /import/tracks with selected track objects
+        - On success: toast "X tracks imported", status badges update to "Monitored"
+
+    Implementation notes:
+    - Use a single renderTrackTable(tracks, containerId) helper shared with
+      Liked Songs tab to avoid duplication
+    - Playlist view state: { view: 'list'|'tracks', playlistId, playlistName }
+    - Store state in module-level variables, NOT in DOM
+    - Pagination: load 50 at a time, append rows on "Load More"
+
+  TEST (execute each step, verify before marking done):
+    1. Navigate to Import → Playlists tab
+    2. Verify playlist list loads (spinner → list with names and track counts)
+    3. Click "Browse" on a playlist with >10 tracks
+    4. Verify breadcrumb shows playlist name
+    5. Verify track table renders: thumb, name, artist, album, duration, status badge
+    6. Verify auto-check: tracks with no status are checked by default
+    7. Verify "Select All" checks all visible rows
+    8. Verify "Deselect All" unchecks all rows
+    9. Apply filter "Not Local" → only non-local tracks visible
+    10. Click "← Back to Playlists" → playlist list view returns (no full reload)
+    11. Select 3+ tracks, click Import → spinner → toast "X tracks imported"
+    12. Imported tracks now show "Monitored" badge
+    13. Navigate away → navigate back → state resets to playlist list view
+    14. Test with a playlist that has 0 tracks → show appropriate empty state
+    15. Test with Spotify disconnected → show CTA to connect
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 3 — DOWNLOAD INFRASTRUCTURE OVERHAUL  [~4 hours, backend + frontend]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Goal: Model the download system directly on Lidarr. Replace the ad-hoc client
+      configuration in Settings → Download Clients with a proper Lidarr-style
+      client registry, priority ordering, and unified queue.
+
+3.1 Database schema changes
+
+    Table: download_clients
+      id INTEGER PRIMARY KEY AUTOINCREMENT
+      name TEXT NOT NULL UNIQUE
+      enable INTEGER DEFAULT 1
+      priority INTEGER DEFAULT 1          -- lower = higher priority
+      implementation TEXT NOT NULL        -- 'qbittorrent'|'sabnzbd'|'slskd'|
+                                          --  'spotizerr'|'metube'
+      protocol TEXT NOT NULL              -- 'torrent'|'usenet'|'soulseek'|
+                                          --  'stream'|'youtube'
+      host TEXT DEFAULT 'localhost'
+      port INTEGER DEFAULT 8080
+      use_ssl INTEGER DEFAULT 0
+      url_base TEXT DEFAULT ''
+      username TEXT DEFAULT ''
+      password TEXT DEFAULT ''
+      category TEXT DEFAULT 'music'       -- qBittorrent/SABnzbd category/tag
+      recent_priority INTEGER DEFAULT 0  -- 0=last, 1=first (qBittorrent)
+      older_priority INTEGER DEFAULT 0
+      settings_json TEXT DEFAULT '{}'    -- implementation-specific extras
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+    Table: download_history
+      id INTEGER PRIMARY KEY AUTOINCREMENT
+      date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      event_type TEXT                     -- 'grabbed'|'downloadFailed'|'imported'
+                                          --  |'downloadIgnored'|'albumImported'
+      monitored_album_id INTEGER
+      monitored_track_id INTEGER
+      source_title TEXT                   -- original release/filename
+      quality TEXT                        -- 'flac'|'mp3-320'|etc
+      indexer TEXT
+      download_client_id INTEGER
+      download_client_name TEXT
+      download_id TEXT                    -- client-specific job/hash ID
+      data TEXT                           -- JSON blob for extra fields
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+    Table: indexers
+      id INTEGER PRIMARY KEY AUTOINCREMENT
+      name TEXT NOT NULL UNIQUE
+      enable INTEGER DEFAULT 1
+      priority INTEGER DEFAULT 1
+      protocol TEXT NOT NULL              -- 'torrent'|'usenet'
+      implementation TEXT NOT NULL        -- 'torznab'|'newznab'|'prowlarr'
+      base_url TEXT NOT NULL
+      api_key TEXT DEFAULT ''
+      categories TEXT DEFAULT ''          -- comma-sep category IDs (3000=audio)
+      supports_rss INTEGER DEFAULT 0
+      supports_search INTEGER DEFAULT 1
+      seed_ratio REAL DEFAULT 0           -- min seed ratio (torrents)
+      seed_time INTEGER DEFAULT 0         -- min seed time in minutes
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+    Migrate: existing download client settings from settings table into
+             download_clients rows. Spotizerr and MeTube become rows in this
+             table, not ad-hoc settings.
+
+3.2 Backend: download_clients.py (new module)
+
+    GET    /download-clients              list all, sorted by priority
+    POST   /download-clients              add client (validates implementation)
+    GET    /download-clients/{id}         get single
+    PUT    /download-clients/{id}         update client
+    DELETE /download-clients/{id}         delete
+    POST   /download-clients/{id}/test    test connection
+    POST   /download-clients/reorder      update priority field for all clients
+                                          body: [{id, priority}, ...]
+
+    test connection logic per implementation:
+      qbittorrent:  GET /api/v2/app/version → expect 200
+      sabnzbd:      GET /api?mode=version&apikey=X → expect 200 + version
+      slskd:        GET /api/v0/application (with Bearer token) → expect 200
+      spotizerr:    GET /health or /api/track/download/... → expect 200
+      metube:       GET / → expect 200
+
+3.3 Backend: download dispatch abstraction (downloader.py — new module)
+
+    async def dispatch_to_client(client: dict, item: dict) -> dict:
+      """Route a download item to the appropriate client implementation."""
+      Routes based on client.implementation:
+        'qbittorrent' → add magnet/torrent via qBittorrent WebUI API
+        'sabnzbd'     → add NZB URL via SABnzbd API
+        'slskd'       → POST /api/v0/searches + download best result
+        'spotizerr'   → existing spotizerr_client.dispatch_download()
+        'metube'      → existing youtube.py logic
+      Returns: {ok, download_id, client_name, error?}
+
+    async def get_queue_from_client(client: dict) -> list[dict]:
+      """Fetch current queue from a download client."""
+      qbittorrent: GET /api/v2/torrents/info?category=music
+      sabnzbd:     GET /api?mode=queue&output=json&apikey=X
+      slskd:       GET /api/v0/downloads (all active downloads)
+      spotizerr:   GET /api/history/?limit=200
+      Returns normalized list: [{id, title, status, size, sizeleft, eta, hash}]
+
+    async def remove_from_client(client: dict, download_id: str) -> bool:
+      Remove item from client queue.
+
+    async def get_unified_queue() -> list[dict]:
+      Iterates all enabled download clients, calls get_queue_from_client,
+      merges results, annotates each with client_name and protocol.
+      Returns sorted by priority (client priority first, then by added date).
+
+3.4 Backend: indexers.py (new module)
+
+    GET    /indexers              list all
+    POST   /indexers              add indexer
+    GET    /indexers/{id}         get single
+    PUT    /indexers/{id}         update
+    DELETE /indexers/{id}         delete
+    POST   /indexers/{id}/test    test: ping RSS feed or capabilities endpoint
+    GET    /indexers/caps         combined capabilities from all enabled indexers
+
+    Prowlarr indexer:
+      base_url: Prowlarr instance URL (e.g. http://prowlarr:9696)
+      api_key: Prowlarr API key
+      test: GET {base_url}/api/v1/health → expect 200
+      search: GET {base_url}/api/v1/search?query=...&categories=3000 (music)
+      RSS:    GET {base_url}/api/v1/feed?categories=3000
+
+    Torznab direct indexer:
+      base_url: Torznab endpoint URL
+      api_key: indexer API key
+      test: GET {base_url}?t=caps&apikey=X → parse XML, check Music category
+      search: GET {base_url}?t=music&q=artist+album&cat=3000&apikey=X
+
+    Newznab direct indexer:
+      base_url: Newznab endpoint
+      api_key: API key
+      test: GET {base_url}?t=caps&apikey=X
+      search: GET {base_url}?t=search&q=artist+album&cat=3000&apikey=X
+
+3.5 Settings page updates
+
+    Settings → Download Clients:
+      Replace current Spotizerr/MeTube ad-hoc fields with:
+      - List of configured clients (same visual pattern as Quality Profiles list)
+      - Table: priority handle | name | implementation | host:port | status | actions
+      - Drag handle on left to reorder priority (drag-and-drop with mouse events)
+      - Status dot: green = test passed, red = test failed, grey = not tested
+      - Actions: Edit, Test, Delete
+      - "+ Add Client" button → modal with implementation dropdown + form
+
+      Implementation dropdown:
+        qBittorrent | SABnzbd | Soulseek (slskd) | Spotizerr | MeTube (YouTube)
+      Each implementation shows only its relevant fields:
+        qBittorrent: host, port, username, password, category, SSL toggle
+        SABnzbd: host, port, api_key, category, SSL toggle
+        slskd: host, port, api_key (Bearer token)
+        Spotizerr: url (full URL)
+        MeTube: url (full URL), default audio format, quality
+
+    Settings → Indexers (NEW section in sidebar):
+      - Same list pattern as Download Clients
+      - Table: priority handle | name | implementation | base_url | status | actions
+      - "+ Add Indexer" → modal: implementation (Prowlarr/Torznab/Newznab) + fields
+      - Prowlarr fields: URL, API key
+      - Torznab/Newznab fields: URL, API key, categories (default 3000)
+      - "Test" button: shows "Connected" or error message inline
+
+  TEST (Phase 3):
+    Download Clients:
+    1. Navigate Settings → Download Clients
+    2. Verify empty state: "No download clients configured"
+    3. Click "+ Add Client" → select qBittorrent
+    4. Fill host=localhost, port=8080 (even if nothing running there)
+    5. Click Save → new row appears in list with grey status dot
+    6. Click Test → red dot + error message "Connection refused" (expected)
+    7. Add a second client (MeTube) → appears as second row
+    8. Drag first row below second → order updates, priority values swap
+    9. Delete qBittorrent row → confirm → disappears from list
+    10. Edit MeTube → change URL → save → updated in list
+
+    Indexers:
+    1. Navigate Settings → Indexers
+    2. Empty state shows
+    3. Add Prowlarr indexer with a real Prowlarr URL + API key
+    4. Click Test → green dot "Connected" (if Prowlarr is up)
+    5. Add Torznab indexer → fill fields → save → appears in list
+    6. Reorder indexers by drag → priority updates
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 4 — WIRE DOWNLOAD DISPATCH  [~3 hours, backend + frontend]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Goal: Every "Download" button in the UI actually works.
+
+4.1 Backend: dispatch endpoint
+
+    POST /wanted/missing-albums/{id}/download
+      1. Fetch monitored_album row
+      2. Determine search terms: artist_name + album_name
+      3. Search all enabled indexers (via indexers.py) → collect results
+      4. Score each result vs expected album (title match + year + track count)
+      5. Best result above threshold → dispatch to highest-priority enabled client
+         If no indexer results (or no indexers) → try Spotizerr (if configured)
+      6. Log to download_history table: event_type='grabbed'
+      7. Update monitored_album.status = 'downloading'
+      8. Return {ok, client_name, title, download_id}
+
+    POST /wanted/missing-tracks/{id}/download
+      Same but for a single track:
+      1. Try Spotizerr first (direct spotify_id dispatch)
+      2. Fallback: search indexers for "artist title"
+      3. Fallback: YouTube auto-fallback (yt_search.auto_fallback)
+      4. Record in download_history
+
+    POST /artists/{id}/command
+      body: {name: "downloadMissing"}
+      Iterates all wanted albums for this artist, dispatches each in order.
+      Returns: {queued: N, skipped: N}
+
+    POST /albums/{id}/command
+      body: {name: "downloadAlbum"}
+      Dispatches the whole album.
+
+4.2 Frontend: wire up all Download buttons
+
+    Wanted page (wanted.js):
+      "Download" button on each missing album row → POST /wanted/missing-albums/{id}/download
+      "Download" button on each wanted track row → POST /wanted/missing-tracks/{id}/download
+      Bulk "Download" in mass-edit bar → iterate selected IDs
+      On success: status badge updates to "Downloading", row dims
+
+    Album detail page (album-detail.js):
+      "Download All" / "Download Missing" button → POST /albums/{id}/command
+      Per-track download button → POST /wanted/missing-tracks/{id}/download
+
+    Artist detail page (artist-detail.js):
+      "Download Missing" button → POST /artists/{id}/command
+
+4.3 Post-download status sync (CRITICAL — closes the loop)
+
+    Modify poll_spotizerr_status() in spotizerr_client.py:
+      When a download transitions to 'completed':
+        Find the matching monitored_track by spotify_id
+        Set monitored_tracks.status = 'have'
+        Recalculate parent album status:
+          If all tracks have status='have' → monitored_albums.status = 'have'
+          Else if any track has status='have' → monitored_albums.status = 'partial'
+        Write download_history entry: event_type='imported'
+        Send notification: "Imported: [track name] by [artist]"
+
+    Create a scheduler job: run_import_check() — runs every 2 minutes
+      Queries all downloads with status='completed' in download_history
+      Triggers post-download enrichment for any that haven't been imported yet
+
+    Also: wire qBittorrent/SABnzbd completed download handling:
+      poll_download_clients() job (every 5 minutes):
+        For each enabled torrent/usenet client, fetch completed downloads
+        Match each to a monitored_album via title fuzzy-match
+        Trigger import: scan the download folder for audio files
+        Move/hardlink files to music_path/Artist/Album/
+        Run scanner on the new path
+        Update monitored_album.status = 'have'
+
+4.4 Unified queue — migrate Activity page
+
+    Activity page currently reads from old `downloads` table.
+    After this phase, it reads from:
+      GET /activity/unified-queue → merges:
+        - downloads table (Spotizerr/MeTube items)
+        - live data from qBittorrent, SABnzbd, slskd (via get_unified_queue())
+      Returns normalized list with client_name, protocol, source fields
+
+    Activity page queue tab:
+      Source badge now shows: Spotizerr / qBittorrent / SABnzbd / Soulseek / YouTube
+      Protocol badge: Stream / Torrent / Usenet / P2P
+      Status: maps client-specific statuses to normalized: queued/downloading/paused/complete/failed
+
+  TEST (Phase 4):
+    Spotizerr dispatch:
+    1. Add a monitored album to Wanted
+    2. Click Download on the album → loading spinner → success toast
+    3. Navigate to Activity → item appears in Queue with source=Spotizerr
+    4. Wait for Spotizerr to process → item transitions to Downloading
+    5. When complete: navigate to Album Detail → tracks show "Local" badges
+    6. Navigate to Wanted → album no longer appears in Missing Albums
+
+    Download History:
+    7. Navigate to Activity → History tab → download appears with event_type='imported'
+    8. timestamp, album name, client name all correct
+
+    Wanted page bulk download:
+    9. Select 3 items in Wanted → click Download
+    10. 3 items transition to Downloading status
+    11. Progress badge in sidebar reflects new queue count
+
+    qBittorrent (if configured):
+    12. Add qBittorrent client in Settings → test connection (green)
+    13. Add a torrent indexer → test connection (green)
+    14. Search for an album on Wanted → Download → item appears in qBittorrent WebUI
+    15. qBittorrent completes download → Jukeboxx imports automatically
+    16. Files appear in music_path/Artist/Album/
+    17. Track status → 'have'
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 5 — PLAYLIST SYNC MENU  [~2 hours]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Goal: A dedicated Playlists page for managing Spotify → local → Jellyfin sync.
+      This is completely separate from Downloads. It is about keeping playlists
+      in sync as M3U files and/or pushing to Jellyfin.
+
+5.1 Add "Playlists" to sidebar nav (between Import and Settings)
+    Route: #/playlists
+    Page: playlists.js (new)
+
+5.2 Database: sync_playlists table
+    id, spotify_id, name, image_url, track_count, enabled INTEGER DEFAULT 0,
+    sync_m3u INTEGER DEFAULT 1, sync_jellyfin INTEGER DEFAULT 0,
+    last_synced_at, created_at, updated_at
+
+5.3 Backend: playlists.py (new module)
+    GET  /playlists            list sync_playlists + live status
+    POST /playlists            add playlist to sync (body: spotify_id)
+    DELETE /playlists/{id}     stop syncing this playlist
+    PATCH /playlists/{id}      toggle sync_m3u, sync_jellyfin, enabled
+    POST /playlists/{id}/sync  trigger immediate sync:
+      1. Fetch all tracks from GET /spotify/playlists/{spotify_id}/tracks
+      2. For each track, check if local file exists (by spotify_id or fuzzy match)
+      3. If sync_m3u: regenerate M3U file at m3u_path_prefix/PlaylistName.m3u
+         using local file paths for matched tracks, skip unmatched
+      4. If sync_jellyfin and jellyfin_url set:
+         POST {jellyfin_url}/Playlists → create or update playlist
+         Uses Jellyfin API: add items by ItemId (matched via Jellyfin music library)
+      5. Update last_synced_at
+      6. Return: {synced_tracks: N, matched_local: N, unmatched: N, m3u_path, jellyfin_id}
+    POST /playlists/sync-all   sync all enabled playlists (scheduler calls this)
+
+5.4 Frontend: playlists.js (new page)
+    Header: "Playlists" title, subtitle "Manage your Spotify playlist sync"
+    "Add Playlist" button → shows user's Spotify playlists (same list as Import
+    tab but with "Track" button instead of "Browse")
+
+    Main table:
+      enabled toggle | playlist image | name | tracks | Local Match % |
+      M3U | Jellyfin | Last Synced | Actions
+
+    Each row:
+      Toggle enabled/disabled
+      M3U column: checkbox to enable M3U generation
+      Jellyfin column: checkbox to enable Jellyfin push (only if jellyfin_url set)
+      Last Synced: relative time
+      Actions: Sync Now, Remove
+
+    "Sync All" button in header
+
+    Empty state: "No playlists tracked. Add a playlist to start syncing."
+
+  TEST:
+    1. Navigate to #/playlists → empty state shows
+    2. Click "Add Playlist" → Spotify playlist list appears
+    3. Click "Track" on a playlist → it appears in the main table
+    4. Toggle enabled → row reflects new state
+    5. Click "Sync Now" → spinner → "X tracks synced, Y matched locally"
+    6. Check filesystem: M3U file created at correct path
+    7. Enable "Sync Jellyfin" → click Sync Now → playlist appears in Jellyfin
+    8. Remove playlist → confirm → disappears from table
+    9. Sidebar nav item "Playlists" correctly active when on this page
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 6 — SOUNDCLOUD INTEGRATION  [~2 hours, Docker + backend + frontend]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6.1 jukeboxx-scdl Docker container
+    docker-compose addition: service jukeboxx-scdl
+    Image: python:3.12-slim
+    Installs: scdl + FastAPI + uvicorn
+    Wraps scdl CLI as a REST API:
+      POST /download  body: {url, output_dir}
+        → runs: scdl -l {url} -c --path {output_dir}
+        → returns: {job_id}
+      GET  /jobs/{id}  → {status: running|done|failed, file_path}
+      GET  /health     → {ok: true}
+    Port: 8082 (internal)
+    Volume: /music shared with backend
+
+6.2 Backend: soundcloud_client.py
+    async def search_soundcloud(query: str) → list[dict]
+      GET https://api.soundcloud.com/tracks?q={query}&client_id={id}&limit=5
+      Returns: [{id, title, user.username, duration, permalink_url, artwork_url}]
+    async def dispatch_scdl(url: str) → dict
+      POST http://jukeboxx-scdl:8082/download with {url, output_dir=music_path}
+
+    SoundCloud search requires a client_id — get one from Settings.
+    Settings → Download Clients → SoundCloud section:
+      client_id field (public, not a secret)
+
+6.3 Wire SoundCloud into download fallback chain
+    Fallback order (after Spotizerr fails):
+      1. YouTube (if fallback enabled and API key set)
+      2. SoundCloud (if scdl configured)
+      3. Mark as 'unavailable'
+
+6.4 SoundCloud as a download client implementation
+    In download_clients table: implementation = 'soundcloud'
+    Settings: client_id field
+    Test: GET https://api.soundcloud.com/tracks?q=test&client_id=X
+
+  TEST:
+    1. Add SoundCloud client in Settings → Download Clients → fill client_id → Test
+    2. If scdl container is up → green status dot
+    3. Trigger fallback: make a track fail Spotizerr → verify SoundCloud search runs
+    4. If match found → track downloads → appears in Activity queue as source=SoundCloud
+    5. On completion → track status → 'have'
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 7 — SYSTEM TOOLS: UNMATCHED FILES & LOG VIEWER  [~1.5 hours]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+7.1 Unmatched files
+    Backend (already partially exists — match_reviews table):
+      GET /library/unmatched    tracks table rows where spotify_id IS NULL
+        Returns: [{id, path, artist, title, album, format, bitrate, duration}]
+      GET /library/unmatched/{id}/search?q=   search Spotify for matches
+        Returns: [{spotify_id, name, artist, album, score, duration_ms}]
+      POST /library/unmatched/{id}/assign
+        body: {spotify_id}
+        Sets tracks.spotify_id, updates monitored_tracks if exists
+
+    Frontend (Settings → System section):
+      "Unmatched Files" expandable section after the scan button
+      Shows: count badge "X files not matched"
+      Table: path | guessed artist | guessed title | format | Search button
+      Click "Search" → inline search results (top 5 Spotify matches with scores)
+      Click a result → "Assign" → file is matched → row disappears
+
+7.2 Log viewer
+    Backend:
+      GET /system/logs?lines=200    tails the last N lines of the log
+        Reads from a log file (backend writes to /app/data/jukeboxx.log)
+        Returns: [{timestamp, level, logger, message}]
+      Update logging config to write to file as well as stdout
+
+    Frontend (Settings → System):
+      "View Logs" button → expands a monospace text panel
+      Shows last 200 log lines, color-coded by level (INFO=dim, WARNING=orange, ERROR=red)
+      "Refresh" button, "Auto-refresh" toggle (every 5s)
+      "Download Logs" button → triggers download of log file
+
+  TEST:
+    Unmatched files:
+    1. Add a music file manually to music_path without Spotify metadata
+    2. Run library scan → file appears in local tracks with no spotify_id
+    3. Navigate Settings → System → "Unmatched Files" shows count
+    4. Click Search on the file → Spotify results appear
+    5. Click Assign → file disappears from unmatched list
+
+    Log viewer:
+    6. Click "View Logs" → log panel expands with recent log lines
+    7. Verify color coding (INFO=grey, WARNING=orange, ERROR=red)
+    8. Trigger an error (bad URL in settings) → refresh logs → error visible
+    9. Auto-refresh: toggle ON → logs update every 5s without clicking
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 8 — HISTORY PAGE  [~1 hour, Lidarr parity]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Lidarr has a dedicated History page (sidebar nav item) that shows every
+download event. This is distinct from the Activity page queue.
+
+8.1 Add "History" to sidebar nav (between Activity and Playlists)
+    Route: #/history
+    Page: history.js (new)
+
+8.2 Backend:
+    GET /history?page=&limit=&event_type=&artist=&indexer=
+      Queries download_history table with joins to monitored_artists/albums
+      Returns paginated list sorted by date DESC
+
+    DELETE /history/clear     delete all history (with confirmation)
+    DELETE /history/{id}      delete single entry
+
+8.3 Frontend: history.js
+    Header: "History" title, subtitle with total count
+    Filter bar:
+      Event type: All | Grabbed | Imported | Failed | Ignored
+      Search: artist name or album name text filter
+    Table (matches Lidarr's History page):
+      date | artist | album | quality | event | indexer | client | actions
+    Event badges (color-coded): Grabbed (blue), Imported (green), Failed (red),
+                                 Ignored (grey)
+    Actions per row: magnifying glass (show details JSON), trash (delete)
+    Pagination: 50/page, load more
+
+  TEST:
+    1. Navigate to #/history → empty state "No download history"
+    2. Download something (from Phase 4) → return to History
+    3. "Grabbed" entry appears with correct timestamp, album, client
+    4. After import completes → "Imported" entry appears
+    5. Filter by "Grabbed" → only grabbed entries show
+    6. Search for artist name → only matching entries show
+    7. Click magnifying glass → full JSON details modal
+    8. Delete a single entry → disappears
+    9. "Clear All" → confirm → all entries gone
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 9 — RELEASE PROFILES  [~1 hour, Lidarr parity]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Lidarr has Release Profiles: filters that accept/reject releases based on
+words in the release title. Essential for usenet/torrent indexers.
+
+9.1 Database: release_profiles table
+    id, name, enable, required TEXT (JSON array of words that must appear),
+    ignored TEXT (JSON array of words that cause rejection),
+    preferred TEXT (JSON array with {word, score} for ranking),
+    include_preferred_when_renaming INTEGER DEFAULT 0,
+    created_at
+
+9.2 Backend: release_profiles.py
+    Full CRUD at /release-profiles
+
+9.3 Settings: Add "Release Profiles" to sidebar nav (between Quality and Download Clients)
+    List of profiles, same visual pattern as Quality Profiles
+    Form: name | required words | ignored words | preferred words (with score)
+    Default profile: none (no filtering)
+
+9.4 Wire into indexer search dispatch:
+    When evaluating indexer search results, apply all enabled release profiles:
+    - Reject if any "ignored" word appears in release title
+    - Require all "required" words (if any)
+    - Score preferred words → add to total score for ranking
+
+  TEST:
+    1. Settings → Release Profiles → add profile "No FLAC" with ignored=["FLAC","flac"]
+    2. Trigger a search that would normally find FLAC releases
+    3. Verify FLAC releases are skipped in dispatch
+    4. Disable profile → FLAC releases accepted again
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE 10 — METADATA PROFILES  [~1 hour, Lidarr parity]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Lidarr's Metadata Profiles control which release types are monitored per artist:
+Albums only, Albums + EPs, All (including Singles), etc.
+
+10.1 Database: metadata_profiles table
+    id, name, enable INTEGER DEFAULT 1,
+    monitor_albums INTEGER DEFAULT 1,
+    monitor_eps INTEGER DEFAULT 0,
+    monitor_singles INTEGER DEFAULT 0,
+    monitor_compilations INTEGER DEFAULT 0,
+    monitor_live_albums INTEGER DEFAULT 0,
+    monitor_remixes INTEGER DEFAULT 0,
+    is_default INTEGER DEFAULT 0,
+    created_at
+
+    Seed defaults: "Standard" (albums only), "Everything" (all types)
+
+10.2 Wire to monitored_artists:
+    Add metadata_profile_id FK to monitored_artists table.
+    When refreshing discography, use the artist's metadata profile to determine
+    which album types to add to monitored_albums.
+
+10.3 Settings: "Metadata Profiles" section (sidebar)
+    List of profiles with checkbox grid for each type.
+    Add Artist modal: "Metadata Profile" dropdown (currently it doesn't exist).
+
+  TEST:
+    1. Create metadata profile "Albums Only" → only Albums checked
+    2. Add artist → select "Albums Only" profile
+    3. Refresh discography → only albums appear (no singles/EPs in monitored_albums)
+    4. Change profile to "Everything" → refresh → all types appear
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TESTING METHODOLOGY  [applies to every phase]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before marking any phase complete, ALL of the following apply:
+
+BROWSER TESTING CHECKLIST
+  □ Open browser dev tools (F12) → Console tab → no JS errors on page load
+  □ Open Network tab → no 4xx or 5xx errors on page load
+  □ Every clickable element in the new feature is clicked
+  □ Every form is submitted with valid data → verify success
+  □ Every form is submitted with invalid data → verify error handling
+  □ Every "empty state" is tested (no data, disconnected, etc.)
+  □ Reload the page → state is consistent (no blank screens, no JS errors)
+  □ Test on a narrow viewport (mobile width) → no broken layout
+  □ Check backend logs after each UI action → no Python tracebacks
+
+API TESTING CHECKLIST
+  Before writing frontend, verify every new endpoint:
+  □ curl -s http://localhost:8000/api/[endpoint] | python3 -m json.tool
+  □ Verify response shape matches what frontend expects
+  □ Test with missing params → verify 4xx error, not 500
+  □ Test with invalid IDs → verify 404, not 500
+
+BACKEND LOG MONITORING
+  Run: docker logs -f jukeboxx-backend
+  Watch for: ERROR, Traceback, Exception
+  Any error = phase is NOT complete.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PHASE ORDER & DEPENDENCIES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phase 1  Quick Fixes         — no deps, do first, standalone
+Phase 2  Import Playlists    — no deps, standalone
+Phase 3  Download Infra      — needed before Phase 4, 6, 9
+Phase 4  Wire Dispatch       — requires Phase 3
+Phase 5  Playlist Sync       — no deps on 3/4, can run parallel with them
+Phase 6  SoundCloud          — requires Phase 3 (client framework)
+Phase 7  System Tools        — no deps, standalone
+Phase 8  History             — requires Phase 4 (needs real download_history rows)
+Phase 9  Release Profiles    — requires Phase 3 (indexer search)
+Phase 10 Metadata Profiles   — no hard deps, can do anytime
+
+SUGGESTED EXECUTION ORDER:
+  1 → 2 → 3 → 4 → 5 (parallel with 4) → 6 → 7 → 8 → 9 → 10
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SIDEBAR NAV — FINAL STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  [♪]  Artists
+  [💿]  Wanted
+  [📅]  Calendar        (hidden unless calendar_enabled=1)
+  [⬇]  Activity        (with active downloads badge)
+  [📋]  History
+  [📑]  Playlists
+  [⬆]  Import
+  ───────────────
+  [⚙]  Settings
+       ├ Media Management
+       ├ Quality Profiles
+       ├ Metadata Profiles
+       ├ Release Profiles
+       ├ Download Clients
+       ├ Indexers
+       ├ Spotify
+       └ System
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILES TO CREATE / MODIFY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+NEW BACKEND FILES:
+  backend/download_clients.py    — client registry API
+  backend/downloader.py          — dispatch abstraction per implementation
+  backend/indexers.py            — indexer registry API + search abstraction
+  backend/release_profiles.py    — release profile CRUD
+  backend/metadata_profiles.py   — metadata profile CRUD
+  backend/playlists.py           — playlist sync API
+  backend/soundcloud_client.py   — scdl integration
+  docker/scdl/                   — jukeboxx-scdl container files
+
+MODIFIED BACKEND FILES:
+  backend/database.py            — download_clients, download_history, indexers,
+                                   release_profiles, metadata_profiles,
+                                   sync_playlists tables + migrations
+  backend/main.py                — register new routers, add /history endpoint,
+                                   add /system/logs, add calendar_enabled guard
+  backend/spotizerr_client.py    — post-download status sync
+  backend/scheduler.py           — add poll_download_clients job, playlist sync job
+  backend/tasks.py               — run_import_check(), run_playlist_sync_all()
+  backend/models.py              — new model classes
+
+NEW FRONTEND FILES:
+  frontend/js/pages/history.js   — History page
+  frontend/js/pages/playlists.js — Playlist sync page
+
+MODIFIED FRONTEND FILES:
+  frontend/js/pages/import.js    — Playlists tab rewrite
+  frontend/js/pages/settings.js  — Add Indexers section, Metadata Profiles,
+                                   Release Profiles, Download Clients overhaul,
+                                   calendar_enabled toggle, unmatched files,
+                                   log viewer
+  frontend/js/pages/wanted.js    — Wire Download buttons to real endpoints
+  frontend/js/pages/album-detail.js — Wire Download buttons
+  frontend/js/pages/artist-detail.js — Wire Download Missing button
+  frontend/js/pages/activity.js  — Migrate to unified queue endpoint
+  frontend/js/app.js             — Add History, Playlists nav, calendar guard
+  frontend/index.html            — Add nav items for History, Playlists
+  frontend/css/style.css         — drag-and-drop reorder styles, new badges

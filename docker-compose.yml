@@ -1,0 +1,51 @@
+services:
+  jukeboxx-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jukeboxx-backend
+    ports:
+      - 6160:8000
+    environment:
+      - DB_PATH=/app/data/jukeboxx.db
+      - MUSIC_PATH=/music
+      - SPOTIZERR_URL=http://192.168.1.152:7171
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - SPOTIFY_REDIRECT_URI=http://192.168.1.152:6160/api/spotify/callback
+      - JWT_SECRET=${JWT_SECRET:-change-me-please-use-random-string}
+      - SYNC_INTERVAL_MINUTES=${SYNC_INTERVAL_MINUTES:-60}
+      - PLAYLIST_PATH=/music/Playlists
+      - JELLYFIN_PATH_PREFIX=/mnt/storage/MUSIC
+      - TZ=America/New_York
+    volumes:
+      - ./data:/app/data
+      - /mnt/storage/MUSIC:/music
+    networks:
+      - jukeboxx-internal
+      - homelab_default
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  metube:
+    image: ghcr.io/alexta69/metube
+    container_name: jukeboxx-metube
+    environment:
+      - DOWNLOAD_DIR=/downloads
+      - AUDIO_DOWNLOAD_DIR=/downloads
+      - DEFAULT_OPTION_FORMAT=bestaudio/best
+    volumes:
+      - /mnt/storage/MUSIC:/downloads
+    networks:
+      - jukeboxx-internal
+    restart: unless-stopped
+
+networks:
+  jukeboxx-internal:
+    driver: bridge
+  homelab_default:
+    external: true

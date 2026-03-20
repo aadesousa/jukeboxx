@@ -1,0 +1,13 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+aiosqlite==0.20.0
+aiofiles==24.1.0
+httpx==0.28.1
+spotipy==2.24.0
+mutagen==1.47.0
+rapidfuzz==3.10.1
+numpy
+apscheduler==3.10.4
+bcrypt==4.2.1
+PyJWT==2.9.0
+yt-dlp

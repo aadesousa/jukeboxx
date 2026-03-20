@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JukeBoxx</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
+    <link rel="stylesheet" href="/css/style.css?v=35">
+</head>
+<body>
+
+<!-- ── Auth Overlay ───────────────────────────────────────────────── -->
+<div id="auth-overlay" class="auth-overlay" hidden>
+    <div class="auth-card">
+        <div class="auth-logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="40" height="40">
+                <path d="M9 19V6l12-3v13"/>
+                <circle cx="6" cy="19" r="3"/>
+                <circle cx="18" cy="16" r="3"/>
+            </svg>
+            <span>JukeBoxx</span>
+        </div>
+        <div id="auth-form"></div>
+    </div>
+</div>
+
+<!-- ── App Shell ──────────────────────────────────────────────────── -->
+<div id="app-shell" class="app-shell" hidden>
+
+    <!-- Sidebar overlay (mobile tap-to-close) -->
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-top">
+            <a href="#/artists" class="sidebar-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="22" height="22" class="logo-icon">
+                    <path d="M9 19V6l12-3v13"/>
+                    <circle cx="6" cy="19" r="3"/>
+                    <circle cx="18" cy="16" r="3"/>
+                </svg>
+                <span class="logo-text">JukeBoxx</span>
+            </a>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a class="nav-item" href="#/artists" data-route="artists" title="Artists">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <span class="nav-label">Artists</span>
+            </a>
+
+            <a class="nav-item" href="#/library" data-route="library" title="Library">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                </svg>
+                <span class="nav-label">Library</span>
+            </a>
+
+            <a class="nav-item" href="#/wanted" data-route="wanted" title="Wanted">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                <span class="nav-label">Wanted</span>
+                <span class="nav-badge" id="nav-wanted-badge" hidden>0</span>
+            </a>
+
+            <a class="nav-item" id="nav-calendar" href="#/calendar" data-route="calendar" title="Calendar" hidden>
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                <span class="nav-label">Calendar</span>
+            </a>
+
+            <a class="nav-item" href="#/activity" data-route="activity" title="Activity">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                <span class="nav-label">Activity</span>
+                <span class="nav-badge nav-badge-blue" id="nav-queue-badge" hidden>0</span>
+            </a>
+
+            <a class="nav-item" href="#/playlists" data-route="playlists" title="Playlist Sync">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <line x1="8" y1="6" x2="21" y2="6"/>
+                    <line x1="8" y1="12" x2="21" y2="12"/>
+                    <line x1="8" y1="18" x2="21" y2="18"/>
+                    <line x1="3" y1="6" x2="3.01" y2="6"/>
+                    <line x1="3" y1="12" x2="3.01" y2="12"/>
+                    <line x1="3" y1="18" x2="3.01" y2="18"/>
+                </svg>
+                <span class="nav-label">Playlists</span>
+            </a>
+
+            <a class="nav-item" href="#/soundcloud" data-route="soundcloud" title="SoundCloud">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M1.175 12.225c-.15 0-.254.097-.282.25l-.357 2.285.357 2.223c.028.148.133.245.282.245.147 0 .252-.097.283-.245l.405-2.223-.405-2.285c-.031-.153-.136-.25-.283-.25zm1.675-.69c-.172 0-.303.118-.33.285l-.303 2.94.303 2.813c.027.163.158.28.33.28.17 0 .3-.117.328-.28l.344-2.813-.344-2.94c-.028-.167-.158-.285-.328-.285zm1.73-.17c-.196 0-.354.14-.38.332L3.9 14.25l.3 2.793c.026.192.184.333.38.333.195 0 .354-.14.38-.333l.34-2.793-.34-2.553c-.026-.192-.185-.332-.38-.332zm1.78-.48c-.22 0-.4.165-.423.383l-.27 2.982.27 2.772c.023.218.203.383.422.383.22 0 .4-.165.424-.383l.307-2.772-.307-2.982c-.024-.218-.204-.383-.423-.383zm1.8-.24c-.245 0-.444.183-.465.428l-.235 3.207.235 2.753c.021.245.22.428.465.428.244 0 .443-.183.464-.428l.266-2.753-.266-3.207c-.021-.245-.22-.428-.464-.428zm1.813-.28c-.268 0-.487.2-.505.468l-.2 3.432.2 2.735c.018.268.237.467.505.467.267 0 .486-.199.504-.467l.228-2.735-.228-3.432c-.018-.268-.237-.468-.504-.468zm1.833-.26c-.292 0-.53.218-.547.51l-.164 3.66.164 2.717c.017.29.255.51.547.51.29 0 .529-.22.546-.51l.186-2.717-.186-3.66c-.017-.292-.256-.51-.546-.51zm1.856-.23c-.315 0-.572.237-.585.553l-.128 3.87.128 2.697c.013.315.27.552.585.552.314 0 .57-.237.584-.552l.146-2.697-.146-3.87c-.014-.316-.27-.553-.584-.553zm1.864-.16c-.34 0-.615.256-.625.596l-.092 4.03.092 2.677c.01.34.285.596.625.596.338 0 .614-.256.623-.596l.105-2.677-.105-4.03c-.01-.34-.285-.596-.623-.596zm2.31 1.054c-.086-.034-.18-.05-.275-.05-.17 0-.33.05-.463.14-.135-1.535-1.42-2.733-2.984-2.733-.413 0-.806.085-1.16.24-.137.055-.173.11-.175.163v10.847c.002.056.044.103.1.11h4.96c.54 0 .977-.438.977-.977V13.21c0-.48-.35-.887-.82-.993a1.49 1.49 0 00-.16-.017z"/>
+                </svg>
+                <span class="nav-label">SoundCloud</span>
+            </a>
+
+            <a class="nav-item" href="#/import" data-route="import" title="Import from Spotify">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="10"/>
+                    <circle cx="12" cy="12" r="4"/>
+                    <line x1="4.93" y1="4.93" x2="9.17" y2="9.17"/>
+                    <line x1="14.83" y1="14.83" x2="19.07" y2="19.07"/>
+                    <line x1="14.83" y1="9.17" x2="19.07" y2="4.93"/>
+                    <line x1="4.93" y1="19.07" x2="9.17" y2="14.83"/>
+                </svg>
+                <span class="nav-label">Import</span>
+            </a>
+
+            <a class="nav-item" href="#/spotizerr" data-route="spotizerr" title="Spotizerr">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M8 12.5c1.5-1 4.5-1 6 0"/>
+                    <path d="M6 10c2.5-1.5 7.5-1.5 12 0"/>
+                    <path d="M9.5 15c1-.7 3-.7 5 0"/>
+                </svg>
+                <span class="nav-label">Spotizerr</span>
+            </a>
+
+            <a class="nav-item" href="#/logs" data-route="logs" title="Logs">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <span class="nav-label">Logs</span>
+            </a>
+
+            <div class="nav-divider"></div>
+
+            <a class="nav-item" href="#/settings" data-route="settings" title="Settings">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <circle cx="12" cy="12" r="3"/>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+                <span class="nav-label">Settings</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="sidebar-stats" id="sidebar-stats"></div>
+        </div>
+    </aside>
+
+    <!-- Main wrapper -->
+    <div class="main-wrapper">
+
+        <!-- Topbar -->
+        <header class="topbar">
+            <button class="topbar-menu-btn" id="topbar-menu-btn" aria-label="Toggle sidebar">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                    <line x1="3" y1="12" x2="21" y2="12"/>
+                    <line x1="3" y1="6" x2="21" y2="6"/>
+                    <line x1="3" y1="18" x2="21" y2="18"/>
+                </svg>
+            </button>
+
+            <div class="topbar-search-wrap">
+                <svg class="topbar-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input class="topbar-search" id="global-search" type="text"
+                       placeholder="Search artists, albums, tracks…" autocomplete="off" spellcheck="false">
+                <kbd class="search-kbd" id="search-kbd">/</kbd>
+            </div>
+
+            <div class="topbar-right">
+                <div class="spotify-dot" id="spotify-dot" title="Spotify disconnected">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                        <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
+                    </svg>
+                </div>
+
+                <div class="health-dot" id="health-dot" title="System healthy"></div>
+
+                <div class="notif-wrap" id="notif-wrap">
+                    <button class="topbar-btn" id="notif-btn" aria-label="Notifications">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                        <span class="topbar-badge" id="notif-badge" hidden>0</span>
+                    </button>
+                    <div class="notif-dropdown" id="notif-dropdown" hidden>
+                        <div class="notif-dropdown-header">
+                            <span>Notifications</span>
+                            <button id="notif-read-all" class="btn-link">Mark all read</button>
+                        </div>
+                        <div id="notif-list" class="notif-list"></div>
+                    </div>
+                </div>
+
+                <button class="topbar-btn user-btn" id="user-btn" hidden title="Account">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Page content -->
+        <main id="page-root" class="page-root"></main>
+
+    </div><!-- /main-wrapper -->
+</div><!-- /app-shell -->
+
+<!-- Toast container -->
+<div id="toasts" class="toast-container"></div>
+
+<!-- Scripts -->
+<script src="/js/api.js?v=20"></script>
+<script src="/js/notifications.js?v=20"></script>
+<script src="/js/pages/artists.js?v=22"></script>
+<script src="/js/pages/artist-detail.js?v=20"></script>
+<script src="/js/pages/album-detail.js?v=20"></script>
+<script src="/js/pages/wanted.js?v=33"></script>
+<script src="/js/pages/calendar.js?v=23"></script>
+<script src="/js/pages/activity.js?v=36"></script>
+<script src="/js/pages/playlists.js?v=29"></script>
+<script src="/js/pages/library.js?v=8"></script>
+<script src="/js/pages/soundcloud.js?v=1"></script>
+<script src="/js/pages/import.js?v=32"></script>
+<script src="/js/pages/settings.js?v=37"></script>
+<script src="/js/pages/spotizerr-page.js?v=1"></script>
+<script src="/js/pages/logs.js?v=1"></script>
+<script src="/js/app.js?v=33"></script>
+</body>
+</html>
