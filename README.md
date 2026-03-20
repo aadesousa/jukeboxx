@@ -4,7 +4,7 @@ A self-hosted music library manager with Spotify integration and multi-source au
 
 Heavily inspired by Lidarr's architecture but with track-level monitoring and Spotify as the source of truth.
 
-![Screenshot placeholder](https://via.placeholder.com/900x500?text=jukeboxx)
+![Screenshot placeholder](https://i.imgur.com/W9Hv8vD.png)
 
 ---
 
