@@ -1017,7 +1017,7 @@ async def _run_multi_source_dispatch_inner(limit: int | None = None, concurrency
     if not sources:
         return {"dispatched": 0, "breakdown": {}}
 
-    batch_size = limit if limit is not None else int(await get_setting("dispatch_batch_size", "10"))
+    batch_size = limit if limit is not None else int(await get_setting("dispatch_batch_size", "50"))
 
     db = await get_db()
     try:
