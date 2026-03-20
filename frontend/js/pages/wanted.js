@@ -106,7 +106,6 @@ const WantedPage = (() => {
                 const parts = [];
                 if (summary.missing_tracks > 0) parts.push(`${summary.missing_tracks} wanted`);
                 if (summary.downloading > 0) parts.push(`${summary.downloading} dispatched`);
-                if (summary.failed > 0) parts.push(`${summary.failed} failed attempts (retrying)`);
                 el.textContent = parts.join(' · ') || 'Nothing wanted';
             }
         } catch {}

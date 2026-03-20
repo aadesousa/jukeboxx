@@ -318,7 +318,7 @@ const App = (() => {
         // Wanted count
         try {
             const data = await api.get('/wanted/missing');
-            const count = (data.missing_albums || 0) + (data.missing_tracks || 0);
+            const count = data.missing_tracks || 0;
             setBadge('nav-wanted-badge', count);
         } catch {}
 
