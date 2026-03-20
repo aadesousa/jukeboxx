@@ -1052,6 +1052,7 @@ async def _run_multi_source_dispatch_inner(limit: int | None = None, concurrency
         "sp_used": 0,
         "dispatched": 0,
         "breakdown": {},
+        "track_index": 0,
     }
     slsk_grabbed: set = set()           # username|folder keys grabbed this run
     slsk_grabbed_albums: set = set()    # album_ids fully dispatched via Soulseek
@@ -1080,6 +1081,9 @@ async def _run_multi_source_dispatch_inner(limit: int | None = None, concurrency
         dispatched_source = None
 
         async with sem:
+            state["track_index"] += 1
+            _dp(track_index=state["track_index"], track_name=track.get("name", ""),
+                track_artist=track.get("artist_name", ""))
             for source in sources:
                 try:
                     if source == "spotizerr":
