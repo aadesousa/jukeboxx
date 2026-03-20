@@ -361,34 +361,72 @@ const ArtistsPage = (() => {
                 </button>
             </div>
             <div class="modal-body">
-                <div style="display:flex;gap:8px;margin-bottom:16px">
-                    <input class="input" id="artist-search-input" placeholder="Search Spotify for an artist…" autocomplete="off" style="flex:1">
-                    <button class="btn" id="artist-search-btn">Search</button>
+                <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border)">
+                    <button class="tab-btn tab-active" id="tab-spotify" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid var(--accent);color:var(--text);cursor:pointer;font-size:.875rem;margin-bottom:-1px">Search Spotify</button>
+                    <button class="tab-btn" id="tab-manual" style="padding:8px 16px;background:none;border:none;border-bottom:2px solid transparent;color:var(--text-dim);cursor:pointer;font-size:.875rem;margin-bottom:-1px">Add Manually</button>
                 </div>
-                <div id="artist-search-results" style="max-height:260px;overflow-y:auto"></div>
-                <div id="artist-add-options" hidden style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
-                    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-                        <div class="selected-artist-img" id="selected-artist-img" style="width:56px;height:56px;border-radius:50%;overflow:hidden;background:var(--bg-raised);flex-shrink:0"></div>
-                        <div>
-                            <div id="selected-artist-name" style="font-weight:600;font-size:1rem"></div>
-                            <div id="selected-artist-meta" style="font-size:.8rem;color:var(--text-dim);margin-top:2px"></div>
+
+                <div id="pane-spotify">
+                    <div style="display:flex;gap:8px;margin-bottom:16px">
+                        <input class="input" id="artist-search-input" placeholder="Search Spotify for an artist…" autocomplete="off" style="flex:1">
+                        <button class="btn" id="artist-search-btn">Search</button>
+                    </div>
+                    <div id="artist-search-results" style="max-height:260px;overflow-y:auto"></div>
+                    <div id="artist-add-options" hidden style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px">
+                        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                            <div class="selected-artist-img" id="selected-artist-img" style="width:56px;height:56px;border-radius:50%;overflow:hidden;background:var(--bg-raised);flex-shrink:0"></div>
+                            <div>
+                                <div id="selected-artist-name" style="font-weight:600;font-size:1rem"></div>
+                                <div id="selected-artist-meta" style="font-size:.8rem;color:var(--text-dim);margin-top:2px"></div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-label">Monitor</div>
+                            <div class="form-control">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                                    <input type="checkbox" id="opt-monitored" checked style="width:16px;height:16px">
+                                    <span>Monitor this artist's discography</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-label">New Releases</div>
+                            <div class="form-control">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                                    <input type="checkbox" id="opt-monitor-new" checked style="width:16px;height:16px">
+                                    <span>Auto-add new albums when released</span>
+                                </label>
+                            </div>
+                        </div>
+                        ${qualityProfiles.length > 0 ? `
+                        <div class="form-row">
+                            <div class="form-label">Quality Profile</div>
+                            <div class="form-control">
+                                <select class="input" id="opt-quality" style="width:auto">${profileOptions}</select>
+                            </div>
+                        </div>` : ''}
+                    </div>
+                </div>
+
+                <div id="pane-manual" hidden>
+                    <div class="form-row">
+                        <div class="form-label">Artist Name <span style="color:var(--red)">*</span></div>
+                        <div class="form-control">
+                            <input class="input" id="manual-artist-name" placeholder="e.g. The Beatles" autocomplete="off" style="width:100%">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-label">Genres</div>
+                        <div class="form-control">
+                            <input class="input" id="manual-artist-genres" placeholder="e.g. rock, pop (optional)" autocomplete="off" style="width:100%">
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-label">Monitor</div>
                         <div class="form-control">
                             <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                                <input type="checkbox" id="opt-monitored" checked style="width:16px;height:16px">
+                                <input type="checkbox" id="manual-opt-monitored" checked style="width:16px;height:16px">
                                 <span>Monitor this artist's discography</span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-label">New Releases</div>
-                        <div class="form-control">
-                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                                <input type="checkbox" id="opt-monitor-new" checked style="width:16px;height:16px">
-                                <span>Auto-add new albums when released</span>
                             </label>
                         </div>
                     </div>
@@ -396,7 +434,7 @@ const ArtistsPage = (() => {
                     <div class="form-row">
                         <div class="form-label">Quality Profile</div>
                         <div class="form-control">
-                            <select class="input" id="opt-quality" style="width:auto">${profileOptions}</select>
+                            <select class="input" id="manual-opt-quality" style="width:auto">${profileOptions}</select>
                         </div>
                     </div>` : ''}
                 </div>
@@ -410,11 +448,38 @@ const ArtistsPage = (() => {
         document.body.appendChild(modal);
 
         let selectedArtist = null;
+        let activeTab = 'spotify';
 
         // Close
         modal.querySelector('#modal-close-btn').addEventListener('click', () => modal.remove());
         modal.querySelector('#modal-cancel-btn')?.addEventListener('click', () => modal.remove());
         modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+        // Tab switching
+        const tabSpotify = modal.querySelector('#tab-spotify');
+        const tabManual  = modal.querySelector('#tab-manual');
+        const paneSpotify = modal.querySelector('#pane-spotify');
+        const paneManual  = modal.querySelector('#pane-manual');
+        const footerEl    = modal.querySelector('#modal-footer');
+
+        function switchTab(tab) {
+            activeTab = tab;
+            const isSpotify = tab === 'spotify';
+            tabSpotify.style.borderBottomColor = isSpotify ? 'var(--accent)' : 'transparent';
+            tabSpotify.style.color = isSpotify ? 'var(--text)' : 'var(--text-dim)';
+            tabManual.style.borderBottomColor  = !isSpotify ? 'var(--accent)' : 'transparent';
+            tabManual.style.color  = !isSpotify ? 'var(--text)' : 'var(--text-dim)';
+            paneSpotify.hidden = !isSpotify;
+            paneManual.hidden  = isSpotify;
+            // Manual tab always shows footer; spotify tab only shows after selecting
+            if (!isSpotify) footerEl.hidden = false;
+            else footerEl.hidden = !selectedArtist;
+        }
+        tabSpotify.addEventListener('click', () => switchTab('spotify'));
+        tabManual.addEventListener('click',  () => {
+            switchTab('manual');
+            setTimeout(() => modal.querySelector('#manual-artist-name')?.focus(), 50);
+        });
 
         // Search
         const searchInput = modal.querySelector('#artist-search-input');
@@ -470,7 +535,6 @@ const ArtistsPage = (() => {
 
         function showSelectedArtist(a) {
             const optionsEl = modal.querySelector('#artist-add-options');
-            const footerEl  = modal.querySelector('#modal-footer');
             const nameEl    = modal.querySelector('#selected-artist-name');
             const metaEl    = modal.querySelector('#selected-artist-meta');
             const imgEl     = modal.querySelector('#selected-artist-img');
@@ -484,13 +548,39 @@ const ArtistsPage = (() => {
 
         // Confirm add
         modal.querySelector('#modal-confirm-btn')?.addEventListener('click', async () => {
+            const btn = modal.querySelector('#modal-confirm-btn');
+
+            if (activeTab === 'manual') {
+                const name = modal.querySelector('#manual-artist-name')?.value.trim();
+                if (!name) { toast('Artist name is required', 'error'); return; }
+                btn.disabled = true; btn.textContent = 'Adding…';
+                try {
+                    const genres = (modal.querySelector('#manual-artist-genres')?.value || '')
+                        .split(',').map(g => g.trim()).filter(Boolean);
+                    const quality_profile_id = parseInt(modal.querySelector('#manual-opt-quality')?.value) || null;
+                    const result = await api.post('/artists/manual', {
+                        name,
+                        genres,
+                        monitored: modal.querySelector('#manual-opt-monitored').checked,
+                        monitor_new_releases: false,
+                        quality_profile_id,
+                    });
+                    toast(`Added ${name}`, 'success');
+                    modal.remove();
+                    await fetchArtists();
+                } catch (e) {
+                    toast('Failed to add artist: ' + e.message, 'error');
+                    btn.disabled = false; btn.textContent = 'Add Artist';
+                }
+                return;
+            }
+
             if (!selectedArtist) return;
             if (allArtists.some(x => x.spotify_id === selectedArtist.spotify_id)) {
                 toast('Artist already added', 'info');
                 modal.remove();
                 return;
             }
-            const btn = modal.querySelector('#modal-confirm-btn');
             btn.disabled = true; btn.textContent = 'Adding…';
             try {
                 const quality_profile_id = parseInt(modal.querySelector('#opt-quality')?.value) || null;
@@ -502,9 +592,7 @@ const ArtistsPage = (() => {
                 });
                 toast(`Added ${selectedArtist.name}`, 'success');
                 modal.remove();
-                // Refresh and kick off discography fetch in background
                 await fetchArtists();
-                // Trigger refresh of discography
                 api.post(`/artists/${result.id}/refresh`).catch(() => {});
             } catch (e) {
                 toast('Failed to add artist: ' + e.message, 'error');

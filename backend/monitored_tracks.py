@@ -110,6 +110,74 @@ async def delete_track(track_id: int):
         await db.close()
 
 
+# ── Add Track Manually (no Spotify) ──────────────────────────────
+
+@router.post("/manual")
+async def add_track_manual(body: dict):
+    """Add a single track without a Spotify connection. Generates a synthetic ID."""
+    from uuid import uuid4
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    synthetic_id  = f"manual:track:{uuid4()}"
+    artist_name   = (body.get("artist_name") or "").strip()
+    album_name    = (body.get("album_name") or "").strip()
+    album_id      = body.get("album_id")
+    artist_id     = body.get("artist_id")
+    track_number  = body.get("track_number")
+    duration_ms   = body.get("duration_ms")
+
+    db = await get_db()
+    try:
+        # Resolve album metadata if album_id given
+        album_spotify_id = None
+        if album_id:
+            cur = await db.execute(
+                "SELECT spotify_id, name, artist_id, artist_spotify_id FROM monitored_albums WHERE id = ?",
+                (album_id,),
+            )
+            row = await cur.fetchone()
+            if row:
+                album_spotify_id = row["spotify_id"]
+                if not album_name:
+                    album_name = row["name"]
+                if not artist_id:
+                    artist_id = row["artist_id"]
+            else:
+                album_id = None
+
+        # Resolve artist metadata if artist_id given
+        artist_spotify_id = None
+        if artist_id:
+            cur = await db.execute(
+                "SELECT spotify_id, name FROM monitored_artists WHERE id = ?", (artist_id,)
+            )
+            row = await cur.fetchone()
+            if row:
+                artist_spotify_id = row["spotify_id"]
+                if not artist_name:
+                    artist_name = row["name"]
+            else:
+                artist_id = None
+
+        await db.execute(
+            """INSERT INTO monitored_tracks
+               (spotify_id, album_id, artist_id, album_spotify_id, artist_spotify_id,
+                name, artist_name, album_name, track_number, duration_ms,
+                status, monitored)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'wanted', 1)""",
+            (synthetic_id, album_id, artist_id, album_spotify_id, artist_spotify_id,
+             name, artist_name, album_name, track_number, duration_ms),
+        )
+        await db.commit()
+        cur = await db.execute("SELECT last_insert_rowid() as id")
+        track_db_id = (await cur.fetchone())["id"]
+        return {"id": track_db_id, "spotify_id": synthetic_id, "name": name}
+    finally:
+        await db.close()
+
+
 # ── Import Tracks (from Spotify library) ─────────────────────────
 
 @router.post("/import")

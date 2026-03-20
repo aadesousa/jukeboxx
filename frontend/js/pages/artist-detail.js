@@ -135,6 +135,7 @@ const ArtistDetailPage = (() => {
                             ${monitored ? '● Monitored' : '○ Unmonitored'}
                         </button>
                         <button class="btn btn-sm" id="hero-refresh-btn">Refresh Discography</button>
+                        <button class="btn btn-sm" id="hero-add-album-btn">+ Add Album</button>
                         <button class="btn btn-sm btn-primary" id="search-missing-btn">Search Missing</button>
                         <a class="btn btn-sm" href="#/import">Import Liked Songs</a>
                         <button class="btn btn-sm" id="hero-delete-btn" style="margin-left:auto;color:var(--red);border-color:transparent;background:transparent">Remove Artist</button>
@@ -194,6 +195,8 @@ const ArtistDetailPage = (() => {
             }
         });
 
+        document.getElementById('hero-add-album-btn')?.addEventListener('click', () => openAddAlbumModal());
+
         document.getElementById('hero-delete-btn')?.addEventListener('click', async () => {
             if (!confirm(`Remove ${artist.name}? All tracked albums and tracks will be unmonitored.`)) return;
             try {
@@ -216,6 +219,91 @@ const ArtistDetailPage = (() => {
                 btn.disabled = false;
                 btn.textContent = 'Search Missing';
             }
+        });
+    }
+
+    // ── Add Album Manually ────────────────────────────────────────────
+    function openAddAlbumModal() {
+        const existing = document.getElementById('add-album-modal');
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-backdrop';
+        modal.id = 'add-album-modal';
+        modal.innerHTML = `
+        <div class="modal-box" style="width:480px;max-width:95vw">
+            <div class="modal-header">
+                <span class="modal-title">Add Album</span>
+                <button class="modal-close" id="modal-close-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-label">Album Name <span style="color:var(--red)">*</span></div>
+                    <div class="form-control">
+                        <input class="input" id="album-name-input" placeholder="e.g. Abbey Road" autocomplete="off" style="width:100%">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-label">Type</div>
+                    <div class="form-control">
+                        <select class="input" id="album-type-input" style="width:auto">
+                            <option value="album">Album</option>
+                            <option value="single">Single</option>
+                            <option value="ep">EP</option>
+                            <option value="compilation">Compilation</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-label">Release Year</div>
+                    <div class="form-control">
+                        <input class="input" id="album-year-input" placeholder="e.g. 1969 (optional)" type="number" min="1900" max="2099" style="width:120px">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" id="modal-cancel-btn">Cancel</button>
+                <button class="btn btn-primary" id="modal-confirm-btn">Add Album</button>
+            </div>
+        </div>`;
+
+        document.body.appendChild(modal);
+        setTimeout(() => modal.querySelector('#album-name-input')?.focus(), 50);
+
+        modal.querySelector('#modal-close-btn').addEventListener('click', () => modal.remove());
+        modal.querySelector('#modal-cancel-btn').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+        modal.querySelector('#modal-confirm-btn').addEventListener('click', async () => {
+            const name = modal.querySelector('#album-name-input').value.trim();
+            if (!name) { toast('Album name is required', 'error'); return; }
+
+            const btn = modal.querySelector('#modal-confirm-btn');
+            btn.disabled = true; btn.textContent = 'Adding…';
+            try {
+                const year = modal.querySelector('#album-year-input').value.trim();
+                await api.post('/albums/manual', {
+                    name,
+                    artist_id: artist.id,
+                    album_type: modal.querySelector('#album-type-input').value,
+                    release_date: year ? `${year}-01-01` : null,
+                });
+                toast(`Added ${name}`, 'success');
+                modal.remove();
+                artist = await api.get(`/artists/${artist.id}`);
+                render();
+            } catch (e) {
+                toast('Failed to add album: ' + e.message, 'error');
+                btn.disabled = false; btn.textContent = 'Add Album';
+            }
+        });
+
+        modal.querySelector('#album-name-input').addEventListener('keydown', e => {
+            if (e.key === 'Enter') modal.querySelector('#modal-confirm-btn').click();
         });
     }
 

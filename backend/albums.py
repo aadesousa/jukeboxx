@@ -201,6 +201,51 @@ async def get_album_tracks_from_spotify(album_id: int):
 
 # ── Bulk Import ───────────────────────────────────────────────────
 
+@router.post("/manual")
+async def add_album_manual(body: dict):
+    """Add an album without a Spotify connection. Generates a synthetic ID."""
+    from uuid import uuid4
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    synthetic_id = f"manual:album:{uuid4()}"
+    album_type  = body.get("album_type", "album")
+    release_date = body.get("release_date")
+    image_url   = body.get("image_url")
+    track_count = int(body.get("track_count") or 0)
+    artist_id   = body.get("artist_id")
+
+    db = await get_db()
+    try:
+        # Resolve artist_spotify_id from artist_id if provided
+        artist_spotify_id = f"manual:artist:{uuid4()}"
+        if artist_id:
+            cur = await db.execute(
+                "SELECT spotify_id FROM monitored_artists WHERE id = ?", (artist_id,)
+            )
+            row = await cur.fetchone()
+            if row:
+                artist_spotify_id = row["spotify_id"]
+            else:
+                artist_id = None  # invalid id — treat as unlinked
+
+        await db.execute(
+            """INSERT INTO monitored_albums
+               (spotify_id, artist_id, artist_spotify_id, name, album_type,
+                release_date, track_count, image_url, status, monitored)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'wanted', 1)""",
+            (synthetic_id, artist_id, artist_spotify_id, name, album_type,
+             release_date, track_count, image_url),
+        )
+        await db.commit()
+        cur = await db.execute("SELECT last_insert_rowid() as id")
+        album_db_id = (await cur.fetchone())["id"]
+        return {"id": album_db_id, "spotify_id": synthetic_id, "name": name}
+    finally:
+        await db.close()
+
+
 @router.post("/bulk")
 async def bulk_add_albums(body: dict):
     """Add multiple albums at once (from import wizard)."""

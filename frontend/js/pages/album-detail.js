@@ -50,6 +50,7 @@ const AlbumDetailPage = (() => {
                 <h3 style="font-size:.875rem;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em">Tracklist</h3>
                 <div style="display:flex;gap:8px">
                     <button class="btn btn-sm btn-primary" id="download-all-btn">Download All Missing</button>
+                    <button class="btn btn-sm" id="add-track-btn">+ Add Track</button>
                     <button class="btn btn-sm" id="fetch-tracks-btn">Fetch from Spotify</button>
                 </div>
             </div>
@@ -201,6 +202,8 @@ const AlbumDetailPage = (() => {
             } catch (err) { toast('Failed: ' + err.message, 'error'); e.target.checked = !e.target.checked; }
         });
 
+        document.getElementById('add-track-btn')?.addEventListener('click', () => openAddTrackModal());
+
         document.getElementById('download-all-btn')?.addEventListener('click', async () => {
             const albumId = album.id;
             const btn = document.getElementById('download-all-btn');
@@ -280,6 +283,91 @@ const AlbumDetailPage = (() => {
                     } catch (err) { toast('Failed: ' + err.message, 'error'); }
                 }
             });
+        });
+    }
+
+    // ── Add Track Manually ────────────────────────────────────────────
+    function openAddTrackModal() {
+        const existing = document.getElementById('add-track-modal');
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-backdrop';
+        modal.id = 'add-track-modal';
+        modal.innerHTML = `
+        <div class="modal-box" style="width:440px;max-width:95vw">
+            <div class="modal-header">
+                <span class="modal-title">Add Track</span>
+                <button class="modal-close" id="modal-close-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-label">Track Name <span style="color:var(--red)">*</span></div>
+                    <div class="form-control">
+                        <input class="input" id="track-name-input" placeholder="e.g. Come Together" autocomplete="off" style="width:100%">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-label">Track #</div>
+                    <div class="form-control">
+                        <input class="input" id="track-number-input" type="number" min="1" placeholder="optional" style="width:100px">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-label">Duration</div>
+                    <div class="form-control" style="display:flex;align-items:center;gap:8px">
+                        <input class="input" id="track-duration-input" type="number" min="0" placeholder="seconds (optional)" style="width:140px">
+                        <span style="font-size:.8rem;color:var(--text-dim)">seconds</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" id="modal-cancel-btn">Cancel</button>
+                <button class="btn btn-primary" id="modal-confirm-btn">Add Track</button>
+            </div>
+        </div>`;
+
+        document.body.appendChild(modal);
+        setTimeout(() => modal.querySelector('#track-name-input')?.focus(), 50);
+
+        modal.querySelector('#modal-close-btn').addEventListener('click', () => modal.remove());
+        modal.querySelector('#modal-cancel-btn').addEventListener('click', () => modal.remove());
+        modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+        modal.querySelector('#modal-confirm-btn').addEventListener('click', async () => {
+            const name = modal.querySelector('#track-name-input').value.trim();
+            if (!name) { toast('Track name is required', 'error'); return; }
+
+            const btn = modal.querySelector('#modal-confirm-btn');
+            btn.disabled = true; btn.textContent = 'Adding…';
+            try {
+                const secs = parseInt(modal.querySelector('#track-duration-input').value) || null;
+                const trackNum = parseInt(modal.querySelector('#track-number-input').value) || null;
+                await api.post('/monitored-tracks/manual', {
+                    name,
+                    album_id: album.id,
+                    artist_name: album.artist_name || '',
+                    album_name: album.name || '',
+                    track_number: trackNum,
+                    duration_ms: secs ? secs * 1000 : null,
+                });
+                toast(`Added ${name}`, 'success');
+                modal.remove();
+                album = await api.get(`/albums/${album.id}`);
+                tracks = album.tracks || [];
+                renderTracklist();
+            } catch (e) {
+                toast('Failed to add track: ' + e.message, 'error');
+                btn.disabled = false; btn.textContent = 'Add Track';
+            }
+        });
+
+        modal.querySelector('#track-name-input').addEventListener('keydown', e => {
+            if (e.key === 'Enter') modal.querySelector('#modal-confirm-btn').click();
         });
     }
 

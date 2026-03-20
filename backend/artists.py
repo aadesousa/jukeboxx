@@ -138,6 +138,38 @@ async def add_artist(body: dict):
         await db.close()
 
 
+# ── Add Artist Manually (no Spotify) ──────────────────────────────
+
+@router.post("/manual")
+async def add_artist_manual(body: dict):
+    """Add an artist without a Spotify connection. Generates a synthetic ID."""
+    from uuid import uuid4
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+
+    synthetic_id = f"manual:artist:{uuid4()}"
+    genres = json.dumps(body.get("genres") or [])
+    monitored = 1 if body.get("monitored", True) else 0
+    monitor_new = 1 if body.get("monitor_new_releases", True) else 0
+    quality_profile_id = body.get("quality_profile_id")
+
+    db = await get_db()
+    try:
+        await db.execute(
+            """INSERT INTO monitored_artists
+               (spotify_id, name, genres, monitored, monitor_new_releases, quality_profile_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (synthetic_id, name, genres, monitored, monitor_new, quality_profile_id),
+        )
+        await db.commit()
+        cur = await db.execute("SELECT last_insert_rowid() as id")
+        artist_id = (await cur.fetchone())["id"]
+        return {"id": artist_id, "spotify_id": synthetic_id, "name": name}
+    finally:
+        await db.close()
+
+
 # ── Get / Update / Delete ─────────────────────────────────────────
 
 @router.get("/{artist_id}")
