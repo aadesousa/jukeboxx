@@ -982,10 +982,16 @@ async def run_multi_source_dispatch(limit: int | None = None, concurrency: int =
     global _dispatch_lock
     if _dispatch_lock:
         log.debug("Multi-source dispatch skipped: already running")
+        # Reset progress so the frontend doesn't hang waiting forever
+        _dp(running=False, phase="done", track_total=0, dispatched=0)
         return {"dispatched": 0, "breakdown": {}, "skipped": True}
     _dispatch_lock = True
     try:
         return await _run_multi_source_dispatch_inner(limit=limit, concurrency=concurrency)
+    except Exception as e:
+        log.error(f"Multi-source dispatch crashed: {e}")
+        _dp(running=False, phase="done", track_total=0, dispatched=0, error=str(e))
+        return {"dispatched": 0, "breakdown": {}, "error": str(e)}
     finally:
         _dispatch_lock = False
 

@@ -788,7 +788,11 @@ async def downloads_dispatch_now():
     """
     import asyncio
     from spotizerr_client import get_spotizerr_queue_status, redispatch_pending
-    from tasks import run_multi_source_dispatch, _dp
+    from tasks import run_multi_source_dispatch, _dp, _dispatch_lock
+
+    # If a dispatch is already running, don't clobber its progress state — just return.
+    if _dispatch_lock:
+        return {"status": "already_running", "message": "Dispatch already in progress"}
 
     sp_dispatched = 0
     breakdown: dict = {}
